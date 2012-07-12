@@ -1,6 +1,7 @@
 {
-    "sourceName": "ITIS -- Integrated Taxonomic Information System",
+    "sourceName": "ITIS",
     "uri": "http://www.itis.gov/",
     "annotations": {
+        "taxonomicStatus": "Does ITIS records this name as valid or invalid?"
     }
 }

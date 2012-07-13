@@ -1,0 +1,26 @@
+MSW3.csv
+--------------------------------
+The raw CSV dataset downloaded from http://www.bucknell.edu/msw3/. This is assumed to be in latin_1 encoding. 
+
+util_parse_csv.py
+--------------------------------
+reads the MSW3.csv file (which is the raw database downloaded from MSW3) website, and preapres a new csv file (called MSW3_PARSED.csv") that can be used in our adaptor script. Currently, this parser does the following:
+1- Encodes everything from Latin_1 to UTF-8. This is important!
+2- Adds a column at the end that has "Genus species". This is our naive attempt at building the bionomial from the taxonomy. 
+
+MSW3_adaptor.py
+--------------------------------
+The adaptor file that searches for matches inside MSW3. It uses some heuristics to get to one and only one match for each search term. If it fails to do so, it skips that particualr search term. When searching the database, only indexed terms are searched (those enclosed in <i> </i> tags). 
+
+Heuristics used are the following, in that order.
+
+1- Try finding the exact match in the last column (i.e. Genus species).
+2- Try finding the exact match anywhere in the record
+3- If the input has two parts, treat the first part as genus name and second part as the species name. 
+   Alternatively, if input has three parts, discard third part, and tread first and second parts as above. 
+   3.1. Try finding a record that has the species name, and the genus names separately in some indexed column, and has at least one of them in the last column
+   3.2. Try finding a record that has the species name, and the genus names separately in some indexed column
+
+These heuristics are tried in that order. If any of them returns only one record, that record is used. Else, the next heuristic is used.
+
+A -v parameter turns on verbose outputs to the standard error 

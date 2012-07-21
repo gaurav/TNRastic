@@ -23,6 +23,38 @@ ITIS.pm -- A TNRastic adaptor for the ITIS downloadable database
         }
     }
 
+=head1 FILES
+
+=head2 names.csv
+
+A CSV of names from a DwC-A file (via https://github.com/GlobalNamesArchitecture/dwca-hunter).
+We require the following fields:
+
+=over 4
+
+=item taxonID
+
+=item parentNameUsageID
+
+=item acceptedNameUsageID
+
+=item scientificName
+
+=item taxonomicStatus
+
+Must be either C<valid>, C<invalid>, C<accepted> or C<not accepted>.
+
+=item taxonRank
+
+=back
+
+=head2 names.sqlite3
+
+This is an SQLite database, v3. It is generated from L<names.csv>.
+
+If there is no names.sqlite3 file, or if names.csv is more recent than
+names.sqlite3, it will be generated.
+
 =cut
 
 package ITIS;
@@ -30,6 +62,25 @@ package ITIS;
 use Carp;
 use LWP::UserAgent;
 use JSON;
+use Text::CSV;
+use DBI;
+use DBD::SQLite;
+
+=head2 CSV_FILENAME
+
+The name of the CSV file.
+
+=cut
+
+our $CSV_FILENAME = "names.csv";
+
+=head2 SQLITE_FILENAME
+
+The name of the SQLITE file.
+
+=cut
+
+our $SQLITE_FILENAME = "names.sqlite3";
 
 =head2 new
 
@@ -45,7 +96,96 @@ sub new {
 
     my $self = bless {}, $class;
 
+    if(not -e $CSV_FILENAME) {
+        croak "ITIS.pm cannot function without a CSV file named '$CSV_FILENAME' which contains a list of names. Please create this file first!";
+
+    elsif(not -e $SQLITE_FILENAME) {
+        $self->create_sqlite();
+
+    } else {
+        my $csv_modified =      (stat $CSV_FILENAME)[9];
+        my $sqlite_modified =   (stat $SQLITE_FILENAME)[9];
+
+        if($sqlite_modified < $csv_modified) {
+            $self->create_sqlite();
+        }
+    }
+
+    $self->init_sqlite();
+
     return $self;
+}
+
+=head2 create_sqlite
+
+Create the SQLite database from the CSV file.
+
+=cut
+
+sub create_sqlite {
+    my $self = shift;
+
+    # Load the SQLite file.
+    $self->init_sqlite();
+    my $dbh = $self->dbh;
+
+    # Set up the SQLite names table.
+    my $s = $dbh->prepare(q{CREATE TABLE IF NOT EXISTS names (taxonID PRIMARY KEY NUMERIC, scientificName TEXT NOT NULL, taxonomicStatus TEXT NOT NULL CHECK(taxonomicStatus = 'valid' OR taxonomicStatus = 'invalid' OR taxonomicStatus = 'accepted' OR taxonomicStatus = 'not accepted'), acceptedNameUsageID TEXT NOT NULL, parentNameUsageID);});
+    $s->execute();
+
+    # Load the CSV file.
+    open(my $csvfile, "<", $CSV_FILENAME) or croak "Could not open $CSV_FILENAME: $!");
+
+    # Set up the CSV reader.
+    my $csv = Text::CSV->new({
+        blank_is_undef => 1
+    });
+    $csv->column_names($csv->getline($csvfile));
+
+    while(defined(my $line = $csv->getline($csvfile))) {
+        $s = $dbh->prepare(q{INSERT INTO names (taxonID, scientificName, taxonomicStatus, acceptedNameUsageID, 
+    }
+}
+
+=head2 init_sqlite
+
+Initialize the SQLite database and connection.
+This will be called by create_sqlite(), so it
+needs to work even if the SQLite file doesn't
+exist. The DBI handle (dbh) will be stored in 
+$self->dbh();
+
+=cut
+
+sub init_sqlite {
+    my $self = shift;
+    
+    my $dbh = DBI->connect("dbi:SQLite:dbname=$SQLITE_FILENAME", "", "", {
+        AutoCommit => 1,
+        RaiseError => 1 
+    });
+
+    croak "Could not create a DBI handle" unless defined $dbh;
+
+    $self->{'dbh'} = $dbh;
+}
+
+=head2 dbh
+
+Returns the DBI handle. Please make sure that
+$self->init_sqlite() is called before calling
+this method -- the constructor should have
+taken care of that.
+
+=cut
+
+sub dbh {
+    my $self = shift;
+
+    croak "No DBI handle set up! Please call the 'init_sqlite()' method before calling 'dbh()'."
+        unless defined $self->{'dbh'};
+
+    return $self->{'dbh'};
 }
 
 =head2 lookup
@@ -61,6 +201,8 @@ sub lookup {
     my ($self, @names) = @_;
 
     croak "No names provided!" if (0 == scalar @names);
+
+    # For each name, look it up with 
 
     # Look up this name on SQLite.
     my $names = join(',', @names); 

@@ -99,7 +99,7 @@ sub new {
     if(not -e $CSV_FILENAME) {
         croak "ITIS.pm cannot function without a CSV file named '$CSV_FILENAME' which contains a list of names. Please create this file first!";
 
-    elsif(not -e $SQLITE_FILENAME) {
+    } elsif(not -e $SQLITE_FILENAME) {
         $self->create_sqlite();
 
     } else {
@@ -130,21 +130,46 @@ sub create_sqlite {
     my $dbh = $self->dbh;
 
     # Set up the SQLite names table.
-    my $s = $dbh->prepare(q{CREATE TABLE IF NOT EXISTS names (taxonID PRIMARY KEY NUMERIC, scientificName TEXT NOT NULL, taxonomicStatus TEXT NOT NULL CHECK(taxonomicStatus = 'valid' OR taxonomicStatus = 'invalid' OR taxonomicStatus = 'accepted' OR taxonomicStatus = 'not accepted'), acceptedNameUsageID TEXT NOT NULL, parentNameUsageID);});
+    my $s = $dbh->prepare(q{CREATE TABLE IF NOT EXISTS names (taxonID NUMERIC PRIMARY KEY, scientificName TEXT NOT NULL, taxonomicStatus TEXT NOT NULL CHECK(taxonomicStatus = 'valid' OR taxonomicStatus = 'invalid' OR taxonomicStatus = 'accepted' OR taxonomicStatus = 'not accepted'), acceptedNameUsageID NUMERIC, parentNameUsageID NUMERIC, taxonRank TEXT NOT NULL);});
     $s->execute();
 
     # Load the CSV file.
-    open(my $csvfile, "<", $CSV_FILENAME) or croak "Could not open $CSV_FILENAME: $!");
+    open(my $csvfile, "<", $CSV_FILENAME) or croak("Could not open $CSV_FILENAME: $!");
 
     # Set up the CSV reader.
     my $csv = Text::CSV->new({
-        blank_is_undef => 1
+        blank_is_undef => 1,
+        binary => 1
     });
     $csv->column_names($csv->getline($csvfile));
+        
+    # TODO: Check if the CSV file has all the relevant fields.
 
-    while(defined(my $line = $csv->getline($csvfile))) {
-        $s = $dbh->prepare(q{INSERT INTO names (taxonID, scientificName, taxonomicStatus, acceptedNameUsageID, 
+    my $count = 0;
+    while(defined(my $line = $csv->getline_hr($csvfile))) {
+        $s = $dbh->prepare(q{INSERT INTO names (taxonID, scientificName, taxonomicStatus, acceptedNameUsageID, parentNameUsageID, taxonRank) VALUES (?, ?, ?, ?, ?, ?)});
+
+#            $line->{'taxonID'},
+#            $line->{'parentNameUsageID'},
+#            $line->{'acceptedNameUsageID'},
+#            $line->{'scientificName'},
+#            $line->{'taxonomicStatus'},
+#            $line->{'taxonRank'}
+
+        $s->execute(
+            $line->{'taxonID'},
+            $line->{'scientificName'},
+            $line->{'taxonomicStatus'},
+            $line->{'acceptedNameUsageID'},
+            $line->{'parentNameUsageID'},
+            $line->{'taxonRank'}
+        );
+
+        $count++;
     }
+
+    print STDERR "names.sqlite3 has been created with $count records! Re-run to use.";
+    exit(0);
 }
 
 =head2 init_sqlite

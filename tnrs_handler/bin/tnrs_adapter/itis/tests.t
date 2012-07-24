@@ -8,8 +8,23 @@ require "ITIS.pm";
 my $itis = ITIS->new();
 isa_ok($itis, "ITIS", "Checking if we can create an ITIS object.");
 
-my $result = encode_json $itis->lookup('Magnifera indica');
-is($result, q({"names":[{"submittedName":"Magnifera indica","acceptedName":"Mangifera indica","score":"0.98210117101673","matchedName":"Mangifera indica","annotations":{"Authority":"L."},"uri":"http://www.tropicos.org/Name/1300071"}],"status":"200","errorMessage":""}), "Checking if the result from 'Magnifera indica' is identical to expected.");
+$result = encode_json $itis->lookup('Mangifera indica');
+is($result, q({"names":[{"submittedName":"Mangifera indica","acceptedName":"Mangifera indica","score":0.5,"matchedName":"Mangifera indica","annotations":{"TSN":"28803","originalTSN":"28803"},"uri":"http://www.itis.gov/servlet/SingleRpt/SingleRpt?search_topic=TSN&search_value=28803"}],"status":200,"errorMessage":""}), "Checking if the result from 'Mangifera indica' is identical to expected.");
+
+
+$result = encode_json $itis->lookup('Eutamias minimus');
+is($result, 
+    q({"names":[{"submittedName":"Eutamias minimus","acceptedName":"Tamias minimus","score":0.5,"matchedName":"Eutamias minimus","annotations":{"TSN":"180195","originalTSN":"180144"},"uri":"http://www.itis.gov/servlet/SingleRpt/SingleRpt?search_topic=TSN&search_value=180195"}],"status":200,"errorMessage":""}),
+    "Checking if the result from 'Eutamias minimus' (accepted name: 'Tamias minimus') is identical to expected."
+);
+
+$result = encode_json $itis->lookup('Magnifera indica', 'Mangifera indica');
+is($result, 
+    q({"names":[{"submittedName":"Magnifera indica","acceptedName":"","score":0,"matchedName":"","annotations":{},"uri":""},{"submittedName":"Mangifera indica","acceptedName":"Mangifera indica","score":0.5,"matchedName":"Mangifera indica","annotations":{"TSN":"28803","originalTSN":"28803"},"uri":"http://www.itis.gov/servlet/SingleRpt/SingleRpt?search_topic=TSN&search_value=28803"}],"status":200,"errorMessage":""}),
+    "Checking if the result from 'Magnifera indica'/'Mangifera indica' correctly fails for one and succeeds for the other."
+);
+
+
 
 $result = $itis->lookup(
     'Iris confusa',

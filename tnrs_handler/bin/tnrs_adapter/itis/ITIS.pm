@@ -65,6 +65,7 @@ use JSON;
 use Text::CSV;
 use DBI;
 use DBD::SQLite;
+use Try::Tiny;
 
 =head2 CSV_FILENAME
 
@@ -171,6 +172,15 @@ sub create_sqlite {
     $dbh->commit();
 
     print STDERR "names.sqlite3 has been created with $count records! Re-run to use.";
+
+    $s = $dbh->prepare("CREATE INDEX index_scientificName ON names (scientificName);");
+    $s->execute();
+
+    $s = $dbh->prepare("CREATE INDEX index_taxonID ON names (taxonID);");
+    $s->execute();
+    
+    print STDERR "Indexes have been created on scientificName and taxonID";
+
     exit(0);
 }
 
@@ -240,68 +250,79 @@ ITIS TNRS for each of the names.
 sub lookup {
     my ($self, @names) = @_;
 
-    croak "No names provided!" if (0 == scalar @names);
+    try {
+        croak "No names provided!" if (0 == scalar @names);
 
-    my $dbh = $self->dbh;
-    my $s_by_name = $dbh->prepare("SELECT scientificName, taxonID, taxonomicStatus, acceptedNameUsageID FROM names WHERE scientificName=?");
-    my $s_by_id = $dbh->prepare("SELECT scientificName, taxonID, taxonomicStatus FROM names WHERE taxonID=?");
+        my $dbh = $self->dbh;
+        my $s_by_name = $dbh->prepare("SELECT scientificName, taxonID, taxonomicStatus, acceptedNameUsageID FROM names WHERE scientificName=?");
+        my $s_by_id = $dbh->prepare("SELECT scientificName, taxonID, taxonomicStatus FROM names WHERE taxonID=?");
 
-    my @all_results;
+        my @all_results;
 
-    # Look up this name on SQLite.
-    foreach my $name (@names) {
-        $s_by_name->execute($name);
+        # Look up this name on SQLite.
+        foreach my $name (@names) {
+            $s_by_name->execute($name);
 
-        my $results = $s_by_name->fetchrow_arrayref();
-        if(not defined $results) {
+            my $results = $s_by_name->fetchrow_arrayref();
+            if(not defined $results) {
+                push @all_results, {
+                    'submittedName' => $name,
+                    'matchedName' => "",
+                    'acceptedName' => "",
+                    'uri' => "",
+                    'annotations' => {
+                        'TSN' => ""
+                    },
+                    'score' => 0
+                };
+                next;
+            }
+
+            die "More than one scientific name with the name $name: this case has not yet been written in!"
+                unless not defined $s_by_name->fetchrow_arrayref();
+
+            my $scientificName = $results->[0];
+            my $taxonID = $results->[1];
+            my $taxonomicStatus = $results->[2];
+            my $acceptedNameUsageID = $results->[3];
+
+            my $acceptedName;
+            if(defined $acceptedNameUsageID) {
+                my $acceptedName_results = $s_by_id->execute($acceptedNameUsageID);
+                $acceptedName = $acceptedName_results->[0];
+                $acceptedNameUsageID = $acceptedName_results->[1]; 
+            } else {
+                $acceptedName = $scientificName;
+                $acceptedNameUsageID = $taxonID;
+            }
+            
+            my $acceptedNameURL = qq{http://www.itis.gov/servlet/SingleRpt/SingleRpt?search_topic=TSN&search_value=$acceptedNameUsageID};
+            
             push @all_results, {
                 'submittedName' => $name,
-                'matchedName' => "",
-                'acceptedName' => "",
-                'uri' => "",
+                'matchedName' => $scientificName,
+                'acceptedName' => $acceptedName,
+                'uri' => $acceptedNameURL,
                 'annotations' => {
-                    'TSN' => ""
+                    'TSN' => $acceptedNameUsageID
                 },
-                'score' => 0
+                'score' => 0.8
             };
-            next;
         }
 
-        die "More than one scientific name with the name $name: this case has not yet been written in!"
-            unless not defined $s_by_name->fetchrow_arrayref();
-
-        my $scientificName = $results->[0];
-        my $taxonID = $results->[1];
-        my $taxonomicStatus = $results->[2];
-        my $acceptedNameUsageID = $results->[3];
-
-        my $acceptedName;
-        if(defined $acceptedNameUsageID) {
-            my $acceptedName_results = $s_by_id->execute($acceptedNameUsageID);
-            $acceptedName = $acceptedName_results->[0];
-            $acceptedNameUsageID = $acceptedName_results->[1]; 
-        } else {
-            $acceptedName = $scientificName;
-            $acceptedNameUsageID = $taxonID;
-        }
-        
-        my $acceptedNameURL = qq{http://www.itis.gov/servlet/SingleRpt/SingleRpt?search_topic=TSN&search_value=$acceptedNameUsageID};
-        
-        push @all_results, {
-            'submittedName' => $name,
-            'matchedName' => $scientificName,
-            'acceptedName' => $acceptedName,
-            'uri' => $acceptedNameURL,
-            'annotations' => {
-                'TSN' => $acceptedNameUsageID
-            },
-            'score' => 0.8
+        return {
+            'status' => 200,
+            'errorMessage' => "",
+            'names' => \@all_results
         };
-    }
+    } catch {
+        my $error = $_;
 
-    return {
-        'status' => 200,
-        'names' => \@all_results
+        return {
+            'status' => 500,
+            'errorMessage' => $error,
+            'names' => []
+        };
     };
 }
 

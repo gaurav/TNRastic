@@ -215,6 +215,19 @@ sub dbh {
     return $self->{'dbh'};
 }
 
+=head2 version_str
+
+Returns version information on the precise release of 
+ITIS being used for this analysis.
+
+=cut
+
+sub version_str {
+    my $self = shift;
+
+    return "unknown"; # TODO
+}
+
 =head2 lookup
 
   my %results = $itis->lookup(@names);
@@ -229,65 +242,66 @@ sub lookup {
 
     croak "No names provided!" if (0 == scalar @names);
 
-    # For each name, look it up with 
+    my $dbh = $self->dbh;
+    my $s_by_name = $dbh->prepare("SELECT scientificName, taxonID, taxonomicStatus, acceptedNameUsageID FROM names WHERE scientificName=?");
+    my $s_by_id = $dbh->prepare("SELECT scientificName, taxonID, taxonomicStatus FROM names WHERE taxonID=?");
+
+    my @all_results;
 
     # Look up this name on SQLite.
-    my $names = join(',', @names); 
+    foreach my $name (@names) {
+        $s_by_name->execute($name);
 
-    my $lwp = $self->{'lwp'};
-    if (not defined $lwp) {
-        $lwp = $self->{'lwp'} = LWP::UserAgent->new(
-            'agent' => "TRNastic iPlant TNRS adaptor/0.1 "
-        );
-    }
+        my $results = $s_by_name->fetchrow_arrayref();
+        if(not defined $results) {
+            push @all_results, {
+                'submittedName' => $name,
+                'matchedName' => "",
+                'acceptedName' => "",
+                'uri' => "",
+                'annotations' => {
+                    'TSN' => ""
+                },
+                'score' => 0
+            };
+            next;
+        }
 
-    my $url = "http://tnrs.iplantc.org/tnrsm-svc/matchNames";
-    my $response = $lwp->post($url, {
-        'retrieve' => 'best',
-        'names' => $names
-    });
+        die "More than one scientific name with the name $name: this case has not yet been written in!"
+            unless not defined $s_by_name->fetchrow_arrayref();
 
-    # If no success, report an error.
-    unless($response->is_success) {
-        return {
-            'status' => $response->code,
-            'errorMessage' => $response->message
-        };
-    }
+        my $scientificName = $results->[0];
+        my $taxonID = $results->[1];
+        my $taxonomicStatus = $results->[2];
+        my $acceptedNameUsageID = $results->[3];
 
-    # Pull out the data we need and construct a JSON object to return.
-    my $results = decode_json($response->decoded_content(
-        charset => 'none'   
-            # Without this, I think decode_json tries to
-            # re-decode Unicode characters; simpler to let
-            # decode_json do the decoding, I think.
-    ));
-
-    my @returned_names;
-    foreach my $item (@{$results->{'items'}}) {
-        my $name = {
-            'submittedName' => $item->{'nameSubmitted'},
-            'matchedName' => $item->{'nameScientific'},
-            'acceptedName' => $item->{'acceptedName'},
-            'uri' => $item->{'acceptedNameUrl'},
+        my $acceptedName;
+        if(defined $acceptedNameUsageID) {
+            my $acceptedName_results = $s_by_id->execute($acceptedNameUsageID);
+            $acceptedName = $acceptedName_results->[0];
+            $acceptedNameUsageID = $acceptedName_results->[1]; 
+        } else {
+            $acceptedName = $scientificName;
+            $acceptedNameUsageID = $taxonID;
+        }
+        
+        my $acceptedNameURL = qq{http://www.itis.gov/servlet/SingleRpt/SingleRpt?search_topic=TSN&search_value=$acceptedNameUsageID};
+        
+        push @all_results, {
+            'submittedName' => $name,
+            'matchedName' => $scientificName,
+            'acceptedName' => $acceptedName,
+            'uri' => $acceptedNameURL,
             'annotations' => {
-                'Authority' => $item->{'acceptedAuthor'}
+                'TSN' => $acceptedNameUsageID
             },
-            'score' => $item->{'overall'}
+            'score' => 0.8
         };
-
-        push @returned_names, $name;
-    }
-
-    my $error_message = $response->message;
-    if($error_message eq 'OK') {
-        $error_message = "";
     }
 
     return {
-        'status' => $response->code,
-        'errorMessage' => $error_message,
-        'names' => \@returned_names
+        'status' => 200,
+        'names' => \@all_results
     };
 }
 

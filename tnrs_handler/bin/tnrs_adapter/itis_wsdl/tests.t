@@ -1,6 +1,6 @@
 #!/usr/bin/perl -w
 
-use Test::More tests => 6;
+use Test::More tests => 7;
 use JSON;
 
 require "ITIS.pm";
@@ -14,11 +14,20 @@ is($result, q({"names":[{"submittedName":"Panthera","acceptedName":"Panthera","s
 $result = encode_json $itis->lookup('Mangifera indica');
 is($result, q({"names":[{"submittedName":"Mangifera indica","acceptedName":"Mangifera indica","score":0.5,"matchedName":"Mangifera indica","annotations":{"TSN":"28803","originalTSN":"28803"},"uri":"http://www.itis.gov/servlet/SingleRpt/SingleRpt?search_topic=TSN&search_value=28803"}],"status":200,"errorMessage":""}), "Checking if the result from 'Mangifera indica' is identical to expected.");
 
+
 $result = encode_json $itis->lookup('Eutamias minimus');
 is($result, 
     q({"names":[{"submittedName":"Eutamias minimus","acceptedName":"Tamias minimus","score":0.5,"matchedName":"Eutamias minimus","annotations":{"TSN":"180195","originalTSN":"180144"},"uri":"http://www.itis.gov/servlet/SingleRpt/SingleRpt?search_topic=TSN&search_value=180195"}],"status":200,"errorMessage":""}),
     "Checking if the result from 'Eutamias minimus' (accepted name: 'Tamias minimus') is identical to expected."
 );
+
+$result = encode_json $itis->lookup('Magnifera indica', 'Mangifera indica');
+is($result, 
+    q({"names":[{"submittedName":"Magnifera indica","acceptedName":"","score":0,"matchedName":"","annotations":{},"uri":""},{"submittedName":"Mangifera indica","acceptedName":"Mangifera indica","score":0.5,"matchedName":"Mangifera indica","annotations":{"TSN":"28803","originalTSN":"28803"},"uri":"http://www.itis.gov/servlet/SingleRpt/SingleRpt?search_topic=TSN&search_value=28803"}],"status":200,"errorMessage":""}),
+    "Checking if the result from 'Magnifera indica'/'Mangifera indica' correctly fails for one and succeeds for the other."
+);
+
+
 
 $result = $itis->lookup(
     'Iris confusa',

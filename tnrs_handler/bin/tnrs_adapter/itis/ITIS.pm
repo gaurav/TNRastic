@@ -132,6 +132,7 @@ sub create_sqlite {
     # Set up the SQLite names table.
     my $s = $dbh->prepare(q{CREATE TABLE IF NOT EXISTS names (taxonID NUMERIC PRIMARY KEY, scientificName TEXT NOT NULL, taxonomicStatus TEXT NOT NULL CHECK(taxonomicStatus = 'valid' OR taxonomicStatus = 'invalid' OR taxonomicStatus = 'accepted' OR taxonomicStatus = 'not accepted'), acceptedNameUsageID NUMERIC, parentNameUsageID NUMERIC, taxonRank TEXT NOT NULL);});
     $s->execute();
+    $dbh->commit();
 
     # Load the CSV file.
     open(my $csvfile, "<", $CSV_FILENAME) or croak("Could not open $CSV_FILENAME: $!");
@@ -146,8 +147,8 @@ sub create_sqlite {
     # TODO: Check if the CSV file has all the relevant fields.
 
     my $count = 0;
+    $s = $dbh->prepare(q{INSERT INTO names (taxonID, scientificName, taxonomicStatus, acceptedNameUsageID, parentNameUsageID, taxonRank) VALUES (?, ?, ?, ?, ?, ?)});
     while(defined(my $line = $csv->getline_hr($csvfile))) {
-        $s = $dbh->prepare(q{INSERT INTO names (taxonID, scientificName, taxonomicStatus, acceptedNameUsageID, parentNameUsageID, taxonRank) VALUES (?, ?, ?, ?, ?, ?)});
 
 #            $line->{'taxonID'},
 #            $line->{'parentNameUsageID'},
@@ -167,6 +168,7 @@ sub create_sqlite {
 
         $count++;
     }
+    $dbh->commit();
 
     print STDERR "names.sqlite3 has been created with $count records! Re-run to use.";
     exit(0);
@@ -186,7 +188,7 @@ sub init_sqlite {
     my $self = shift;
     
     my $dbh = DBI->connect("dbi:SQLite:dbname=$SQLITE_FILENAME", "", "", {
-        AutoCommit => 1,
+        AutoCommit => 0,
         RaiseError => 1 
     });
 

@@ -117,6 +117,17 @@ sub new {
     return $self;
 }
 
+=head2 DESTROY
+
+=cut
+
+sub DESTROY {
+    my $self = shift;
+
+    my $dbh = $self->dbh;
+    $dbh->disconnect() if defined $dbh;
+}
+
 =head2 create_sqlite
 
 Create the SQLite database from the CSV file.
@@ -254,14 +265,14 @@ sub lookup {
         croak "No names provided!" if (0 == scalar @names);
 
         my $dbh = $self->dbh;
-        my $s_by_name = $dbh->prepare("SELECT scientificName, taxonID, taxonomicStatus, acceptedNameUsageID FROM names WHERE scientificName=?");
+        my $s_by_name = $dbh->prepare("SELECT scientificName, taxonID, taxonomicStatus, acceptedNameUsageID FROM names WHERE scientificName LIKE ? ORDER BY LENGTH(scientificName) ASC LIMIT 1");
         my $s_by_id = $dbh->prepare("SELECT scientificName, taxonID, taxonomicStatus FROM names WHERE taxonID=?");
 
         my @all_results;
 
         # Look up this name on SQLite.
         foreach my $name (@names) {
-            $s_by_name->execute($name);
+            $s_by_name->execute("\%$name\%");
 
             my $results = $s_by_name->fetchrow_arrayref();
             if(not defined $results) {
@@ -270,14 +281,15 @@ sub lookup {
                     'matchedName' => "",
                     'acceptedName' => "",
                     'uri' => "",
-                    'annotations' => {
-                        'TSN' => ""
-                    },
+                    'annotations' => {},
                     'score' => 0
                 };
                 next;
             }
 
+            # This is currently rendered impossible: we're currently using 'LIMIT 1' to select one
+            # of the names provided by ITIS. As a shortcut, we're sorting by LENGTH(scientificName):
+            # the smallest string is most likely to be a closer match, I think.
             die "More than one scientific name with the name $name: this case has not yet been written in!"
                 unless not defined $s_by_name->fetchrow_arrayref();
 
@@ -288,7 +300,9 @@ sub lookup {
 
             my $acceptedName;
             if(defined $acceptedNameUsageID) {
-                my $acceptedName_results = $s_by_id->execute($acceptedNameUsageID);
+                $s_by_id->execute($acceptedNameUsageID);
+                my $acceptedName_results = $s_by_id->fetchrow_arrayref();
+
                 $acceptedName = $acceptedName_results->[0];
                 $acceptedNameUsageID = $acceptedName_results->[1]; 
             } else {
@@ -304,9 +318,10 @@ sub lookup {
                 'acceptedName' => $acceptedName,
                 'uri' => $acceptedNameURL,
                 'annotations' => {
-                    'TSN' => $acceptedNameUsageID
+                    'originalTSN' => "" . $taxonID,
+                    'TSN' => "" . $acceptedNameUsageID
                 },
-                'score' => 0.8
+                'score' => 0.5
             };
         }
 

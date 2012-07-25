@@ -272,6 +272,8 @@ sub lookup {
 
         # Look up this name on SQLite.
         foreach my $name (@names) {
+            chomp $name;
+
             $s_by_name->execute("\%$name\%");
 
             my $results = $s_by_name->fetchrow_arrayref();

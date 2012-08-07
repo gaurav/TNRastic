@@ -60,11 +60,12 @@ names.sqlite3, it will be generated.
 package ITIS;
 
 use Carp;
-use LWP::UserAgent;
-use JSON;
-use Text::CSV;
-use DBI;
 use DBD::SQLite;
+use DBI;
+use Data::Dumper;
+use JSON;
+use LWP::UserAgent;
+use Text::CSV;
 use Try::Tiny;
 
 =head2 CSV_FILENAME
@@ -83,6 +84,14 @@ The name of the SQLITE file.
 
 our $SQLITE_FILENAME = "names.sqlite3";
 
+=head2 VERSION_FILENAME
+
+The "version" file (which tells you what version of ITIS the CSV file is from).
+
+=cut
+
+our $VERSION_FILENAME = "itis-version.txt";
+
 =head2 new
 
 Creates a new ITIS object, which can be used to make requests against
@@ -97,10 +106,12 @@ sub new {
 
     my $self = bless {}, $class;
 
-    if(not -e $CSV_FILENAME) {
-        croak "ITIS.pm cannot function without a CSV file named '$CSV_FILENAME' which contains a list of names. Please create this file first!";
+    $self->download_itis() if(not -e $CSV_FILENAME);
 
-    } elsif(not -e $SQLITE_FILENAME) {
+    # TODO: Test whether the ITIS file version has changed
+    # and, if so, redownload the CSV file.
+
+    if(not -e $SQLITE_FILENAME) {
         $self->create_sqlite();
 
     } else {
@@ -126,6 +137,36 @@ sub DESTROY {
 
     my $dbh = $self->dbh;
     $dbh->disconnect() if defined $dbh;
+}
+
+=head2 download_itis
+
+Download ITIS as a DwC-A file from the itis-dwca repository.
+
+=cut
+
+sub download_itis {
+    my $self = shift;
+
+    # Download the names file.
+    my $ua = LWP::UserAgent->new;
+
+    my $response = $ua->get('http://gaurav.github.com/itis-dwca/latest/version.txt',
+        ':content_file' => $VERSION_FILENAME
+    );
+    if(not $response->is_success) {
+        die "Could not download the ITIS version file: " . Dumper($response);
+    }
+
+    $response = $ua->get('http://gaurav.github.com/itis-dwca/latest/taxa.txt',
+        ':content_file' => $CSV_FILENAME
+    );
+    if(not $response->is_success) {
+        die "Could not download the ITIS taxa.txt file: " . Dumper($response);
+    }
+
+    # Now that we have a new CSV file, the SQLite file is out of date.
+    unlink($SQLITE_FILENAME);
 }
 
 =head2 create_sqlite
@@ -182,17 +223,11 @@ sub create_sqlite {
     }
     $dbh->commit();
 
-    print STDERR "names.sqlite3 has been created with $count records! Re-run to use.";
-
     $s = $dbh->prepare("CREATE INDEX index_scientificName ON names (scientificName);");
     $s->execute();
 
     $s = $dbh->prepare("CREATE INDEX index_taxonID ON names (taxonID);");
     $s->execute();
-    
-    print STDERR "Indexes have been created on scientificName and taxonID";
-
-    exit(0);
 }
 
 =head2 init_sqlite

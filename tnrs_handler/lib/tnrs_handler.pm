@@ -9,16 +9,57 @@
 
 package tnrs_handler;
 use handler_lib qw(get_cfg call_fun);
-use Dancer ':syntax';
 use JSON;
+use Dancer ':syntax';
 use Digest::MD5 qw(md5_hex);
+use Sys::Hostname;
 
-our $VERSION = '2.1.0';
+our $VERSION = '2.1.2';
 
-my $config_file_path = "handler_config.json";
-my $cfg              = get_cfg($config_file_path);
+my $DEF_CONFIG = "handler_config.json";
 
-my $n_pids = 0;
+my $cfg = init($DEF_CONFIG);
+
+sub init {
+	my $def_config_file = shift;
+
+	my $handler_cfg = config->{handler_cfg};
+	if ( !$handler_cfg ) {
+		$handler_cfg = $def_config_file;
+	}
+
+	my $_cfg = get_cfg($handler_cfg);
+
+	$_cfg->{prefix} = config->{prefix};
+	if ( !$_cfg->{prefix} ) {
+		$_cfg->{prefix}=''; 
+		prefix undef;
+	}
+	else {
+		prefix $_cfg->{prefix};
+	}
+
+	$_cfg->{host} = config->{hostname};
+	if ( !$_cfg->{host} ) {
+		$_cfg->{host} = hostname;
+	}
+	if ( $_cfg->{host} !~ /^http/ ) {
+		$_cfg->{host} = "http://$_cfg->{host}";
+	}
+
+	$_cfg->{port} = config->{port};
+	if ( !$_cfg->{port} ) {
+		$_cfg->{host} = "$_cfg->{host}:3000";
+	}
+	elsif ( $_cfg->{port} eq '80' ) {
+		$_cfg->{host} = $_cfg->{host};
+	}
+	else {
+		$_cfg->{host} = "$_cfg->{host}:$_cfg->{port}";
+	}
+	return $_cfg;
+
+}
 
 #TODO: Add cache
 
@@ -43,7 +84,8 @@ sub call {
 
 #Information
 get '/' => sub {
-	template 'index' => { host => $cfg->{host}, version => $VERSION };
+	template 'index' =>
+	  { host => $cfg->{host}, prefix => $cfg->{prefix}, version => $VERSION };
 };
 
 #Only for debugging purposes
@@ -121,7 +163,7 @@ any [ 'post', 'get' ] => '/submit' => sub {
 get '/retrieve/:job_id?' => sub {
 	if ( !defined( param('job_id') ) ) {
 		return _error( 'bad_request',
-"Please specify a job id. Usage: GET $cfg->{'host'}/retrieve/&ltjob_id&gt"
+"Please specify a job id. Usage: GET $cfg->{'host'}$cfg->{'prefix'}/retrieve/&ltjob_id&gt"
 		);
 	}
 	return call( 'retrieve_Job_id', param('job_id') );
@@ -131,10 +173,17 @@ get '/retrieve/:job_id?' => sub {
 any [ 'del', 'get', 'post' ] => '/delete/:job_id?' => sub {
 	if ( !defined( param('job_id') ) ) {
 		return _error( 'bad_request',
-"Please specify a job id. Usage: DELETE | GET | POST $cfg->{'host'}/delete/&ltjob_id&gt"
+"Please specify a job id. Usage: DELETE | GET | POST $cfg->{'host'}$cfg->{'prefix'}/delete/&ltjob_id&gt"
 		);
 	}
-	return call( 'delete_Job_id', param('job_id') );
+	my $job_id = param('job_id');
+	my $ret = decode_json( call( 'delete_Job_id', $job_id ) );
+	if ( $ret->{'status'} eq 'found' ) {
+		$ret->{'message'} .=
+		  "You can retrieve the results at $cfg->{host}/retrieve/$job_id",
+		  $ret->{'uri'} = "$cfg->{host}/retrieve/$job_id";
+	}
+	return encode_json($ret);
 };
 
 #Stores a submitted list of names in a temporary file
@@ -166,7 +215,7 @@ sub _error {
 #Build the response to a successful submission.
 sub _build_response {
 	my ( $fn, $date ) = @_;
-	my $uri = "$cfg->{host}/retrieve/$fn";
+	my $uri = "$cfg->{host}$cfg->{'prefix'}/retrieve/$fn";
 
 	my $json = {
 		'status'      => 'found',

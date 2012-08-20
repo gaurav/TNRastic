@@ -3,7 +3,7 @@
 # all the settings in this file will be loaded at Dancer's startup.
 
 # Your application's name
-appname: "tnrs_handler"
+appname: "Taxosaurus"
 
 # The default layout to use for your application (located in
 # views/layouts/main.tt)
@@ -27,4 +27,14 @@ template: "simple"
 #     start_tag: '[%'
 #     end_tag:   '%]'
 daemon: true
-port: 3000
+
+# port. If empty defaults to 3000. Sudo privileges are usually required to run on port 80
+port: 80 
+
+# prefix. Sets the top level resource
+#prefix: "/tnrs"
+
+#Host name
+#NOTE: This does not affect the actual host, but only the links that will be shown to the user
+hostname: "http://www.taxosaurus.org" 
+
